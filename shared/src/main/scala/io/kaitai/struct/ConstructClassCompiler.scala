@@ -4,7 +4,7 @@ import io.kaitai.struct.datatype.DataType._
 import io.kaitai.struct.datatype._
 import io.kaitai.struct.exprlang.Ast
 import io.kaitai.struct.format._
-import io.kaitai.struct.languages.components.{LanguageCompiler, LanguageCompilerStatic}
+import io.kaitai.struct.languages.components.{LanguageCompiler, LanguageCompilerStatic, PythonOps}
 import io.kaitai.struct.translators.ConstructTranslator
 
 import scala.collection.mutable
@@ -44,7 +44,8 @@ class ConstructClassCompiler(classSpecs: ClassSpecs, topClass: ClassSpec, config
 
     cs.types.foreach { case (_, typeSpec) => compileClass(typeSpec) }
 
-    out.puts(s"${types2class(cs.name)} = Struct(")
+    val classname = types2class(cs.name)
+    out.puts(s"$classname = '$classname' / Struct(")
     out.inc
 
     provider.nowClass = cs
@@ -60,7 +61,8 @@ class ConstructClassCompiler(classSpecs: ClassSpecs, topClass: ClassSpec, config
     }
 
     out.dec
-    out.puts(")")
+    val docStr = PythonOps.compileUniversalDocs(cs.doc)
+    out.puts(if (docStr.isEmpty) ")" else s") * '''$docStr'''")
     out.puts
   }
 
@@ -75,7 +77,18 @@ class ConstructClassCompiler(classSpecs: ClassSpecs, topClass: ClassSpec, config
   }
 
   def compileAttr(attr: AttrLikeSpec): Unit = {
-    out.puts(s"'${idToStr(attr.id)}' / ${compileAttrBody(attr)},")
+    val attrStr = s"'${idToStr(attr.id)}' / ${compileAttrBody(attr)}"
+    val docStr = PythonOps.compileUniversalDocs(attr.doc)
+    if (docStr.isEmpty) {
+      out.puts(s"$attrStr,")
+    } else if (!docStr.contains('\n')) {
+      out.puts(s"$attrStr * '$docStr',")
+    } else {
+      out.puts(s"$attrStr * \\")
+      out.inc
+      out.putsLines("", s"'''$docStr''',")
+      out.dec
+    }
   }
 
   def compileValueInstance(id: Identifier, vis: ValueInstanceSpec): Unit = {
